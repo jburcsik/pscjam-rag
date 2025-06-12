@@ -5,23 +5,25 @@ This will allow us to use environment variables from Replit Secrets.
 import os
 from os import environ
 
+# Load .env file at import time
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    print("Loaded .env file")
+except ImportError:
+    print("dotenv package not found, .env file not loaded")
+
 def get_api_key():
     """Get OpenAI API key from environment variables."""
     # Try to get from different possible sources
-    # 1. For Replit, get from Replit Secrets
+    # 1. From environment variables (includes those loaded from .env)
+    api_key = os.environ.get('OPENAI_API_KEY')
+    if api_key:
+        return api_key
+    
+    # 2. For Replit, get from Replit Secrets
     if 'REPL_ID' in os.environ:
         return os.environ.get('OPENAI_API_KEY')
-    # 2. From environment variables
-    elif os.environ.get('OPENAI_API_KEY'):
-        return os.environ.get('OPENAI_API_KEY')
-    # 3. From .env file if exists (requires python-dotenv)
-    else:
-        try:
-            from dotenv import load_dotenv
-            load_dotenv()
-            return os.environ.get('OPENAI_API_KEY')
-        except ImportError:
-            pass
     
     # If we get here, we don't have a key
     print("WARNING: No OpenAI API key found. Please set the OPENAI_API_KEY environment variable.")
