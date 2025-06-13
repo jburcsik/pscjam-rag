@@ -1,15 +1,24 @@
 """
 Data loader module for adding substantial data to the RAG system.
 """
+import os
 from rag_engine import RAGEngine
 
-def load_gc_forms_data(rag_engine):
+# Import external data loading function if available
+try:
+    from external_data import load_external_data
+    EXTERNAL_DATA_AVAILABLE = True
+except ImportError:
+    EXTERNAL_DATA_AVAILABLE = False
+    
+def load_gc_forms_data(rag_engine, include_external=True):
     """
     Load more comprehensive GC Forms documentation into the RAG system.
     
     Args:
         rag_engine: The RAG engine to load data into
-    
+        include_external: Whether to include external data from website and GitHub
+        
     Returns:
         int: Number of documents added
     """
@@ -262,4 +271,17 @@ def load_gc_forms_data(rag_engine):
     docs_added += 1
     
     print(f"Successfully loaded {docs_added} GC Forms documents")
-    return docs_added
+    
+    # Load external data if requested and available
+    external_docs_added = 0
+    if include_external and EXTERNAL_DATA_AVAILABLE:
+        try:
+            print("\nLoading external data from website and GitHub repository...")
+            external_docs_added = load_external_data(rag_engine, use_cache=True)
+            print(f"Added {external_docs_added} documents from external sources")
+        except Exception as e:
+            print(f"Error loading external data: {str(e)}")
+    
+    total_docs = docs_added + external_docs_added
+    print(f"Total documents loaded: {total_docs}")
+    return total_docs

@@ -1,0 +1,32 @@
+[
+  {
+    "text": "Form Builder API\nA RESTful API for creating and managing forms with user authentication and response collection\n\nAuthentication: Most endpoints require an API key. Include it in the X-API-Key header or as an api_key query parameter.\n\nUser Management\nPOST /api/signup\nCreate a new user account and receive an API key.\n\n{\n  \"email\": \"user@example.com\",\n  \"password\": \"yourpassword\"\n}\nResponse:\n{\n  \"message\": \"User created successfully\",\n  \"user\": {\n    \"email\": \"user@example.com\",\n    \"api_key\": \"uuid-here\",\n    \"created_at\": \"2023-...\"\n  }\n}\n\nForm Management\nPOST /api/forms\nRequires API Key\n\nCreate a new form with custom fields.\n\n{\n  \"title\": \"Contact Form\",\n  \"description\": \"Get in touch\",\n  \"fields\": [\n    {\n      \"name\": \"name\",\n      \"type\": \"text\",\n      \"label\": \"Full Name\",\n      \"required\": true\n    },\n    {\n      \"name\": \"email\",\n      \"type\": \"email\",\n      \"label\": \"Email Address\",\n      \"required\": true\n    }\n  ]\n}\n\nGET /api/forms\nRequires API Key\n\nGet all forms owned by the authenticated user.\n\nGET /api/forms/{form_id}\nPublic\n\nGet form structure for display in other applications.",
+    "metadata": {
+      "source": "Forms API Documentation",
+      "url": "https://forms.ai-jam.cdssandbox.xyz/",
+      "title": "Form Builder API Documentation - Part 1",
+      "section": "api_docs",
+      "api_endpoints": [
+        "POST /api/signup",
+        "POST /api/forms",
+        "GET /api/forms",
+        "GET /api/forms/{form_id}"
+      ]
+    }
+  },
+  {
+    "text": "Response Management\nPOST /api/forms/{form_id}/responses\nPublic\n\nSubmit a response to a form.\n\n{\n  \"responses\": {\n    \"name\": \"John Doe\",\n    \"email\": \"john@example.com\",\n    \"message\": \"Hello world!\"\n  }\n}\n\nGET /api/forms/{form_id}/responses\nRequires API Key\n\nRetrieve all responses for a form (owner only).\n\nDebug Endpoints\nGET /api/debug/stats\nGet system statistics.\n\nPOST /api/debug/clear\nClear all data (for testing).\n\nExample Usage\n1. Sign up for an account:\ncurl -X POST /api/signup \\\n  -H \"Content-Type: application/json\" \\\n  -d {\"email\": \"your@email.com\", \"password\": \"yourpassword\"}\n\n2. Create a form (using the API key from step 1):\ncurl -X POST /api/forms \\\n  -H \"Content-Type: application/json\" \\\n  -H \"X-API-Key: your-api-key\" \\\n  -d {\"title\": \"Survey\", \"fields\": [{\"name\": \"feedback\", \"type\": \"text\", \"required\": true}]}\n\n3. Submit a response (public, no API key needed):\ncurl -X POST /api/forms/{form_id}/responses \\\n  -H \"Content-Type: application/json\" \\\n  -d {\"responses\": {\"feedback\": \"Great form!\"}}\n\nForm Builder API - In-Memory Storage • All data is stored temporarily in server memory",
+    "metadata": {
+      "source": "Forms API Documentation",
+      "url": "https://forms.ai-jam.cdssandbox.xyz/",
+      "title": "Form Builder API Documentation - Part 2",
+      "section": "api_docs",
+      "api_endpoints": [
+        "POST /api/forms/{form_id}/responses",
+        "GET /api/forms/{form_id}/responses",
+        "GET /api/debug/stats",
+        "POST /api/debug/clear"
+      ]
+    }
+  }
+]

@@ -4,6 +4,7 @@ Vector Store module for embedding storage and retrieval.
 import requests
 import json
 import math
+import os
 from api_secrets import get_api_key, get_api_endpoint
 
 class VectorStore:
@@ -142,3 +143,50 @@ class VectorStore:
             
         # Return cosine similarity
         return dot_product / (magnitude1 * magnitude2)
+    
+    def save_embeddings(self, file_path="embeddings_cache.json"):
+        """
+        Save embeddings to a cache file.
+        
+        Args:
+            file_path: Path to save the embeddings cache
+        
+        Returns:
+            bool: True if embeddings were successfully saved
+        """
+        try:
+            print(f"Saving {len(self.embeddings)} embeddings to {file_path}")
+            
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(self.embeddings, f)
+            
+            print(f"Successfully saved embeddings cache.")
+            return True
+        except Exception as e:
+            print(f"Error saving embeddings: {str(e)}")
+            return False
+    
+    def load_embeddings(self, file_path="embeddings_cache.json"):
+        """
+        Load embeddings from a cache file.
+        
+        Args:
+            file_path: Path to the embeddings cache
+            
+        Returns:
+            bool: True if embeddings were successfully loaded
+        """
+        if not os.path.exists(file_path):
+            print(f"No embeddings cache found at {file_path}")
+            return False
+        
+        try:
+            print(f"Loading embeddings from {file_path}")
+            with open(file_path, 'r', encoding='utf-8') as f:
+                self.embeddings = json.load(f)
+            
+            print(f"Successfully loaded {len(self.embeddings)} embeddings.")
+            return True
+        except Exception as e:
+            print(f"Error loading embeddings: {str(e)}")
+            return False
