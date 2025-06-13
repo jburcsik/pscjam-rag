@@ -157,6 +157,33 @@ def mcp_endpoint():
         print(f"Error in MCP endpoint: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/mcp/stream', methods=['POST'])
+def mcp_stream_endpoint():
+    """MCP endpoint that streams responses using Server-Sent Events (SSE)."""
+    try:
+        from streaming import sse_response, stream_response_generator
+        
+        print(f"SSE MCP endpoint called with method: {request.method}")
+        print(f"SSE MCP request data: {request.data}")
+        data = request.get_json()
+        print(f"SSE MCP parsed JSON data: {data}")
+        
+        if not data or 'request_type' not in data:
+            print("Error: Invalid MCP request format")
+            return jsonify({"error": "Invalid request format"}), 400
+            
+        query = data.get('query', '')
+        request_type = data.get('request_type')
+        
+        print(f"Processing streaming request for query: {query}")
+        
+        # Return a streaming response using the generator
+        return sse_response(lambda: stream_response_generator(query, rag_engine, mcp_engine))
+        
+    except Exception as e:
+        print(f"Error in SSE MCP endpoint: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/health')
 def health_check():
     """Health check endpoint."""

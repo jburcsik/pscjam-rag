@@ -18,6 +18,7 @@ This system uses OpenAI embeddings to create a simple but effective vector searc
 - Web UI for interactive queries
 - API endpoints for MCP server integration
 - Deployment ready for Replit
+- Server-Sent Events (SSE) for streaming responses in real-time
 
 ## Setup and Deployment
 
@@ -57,6 +58,21 @@ POST /api/code
   "language": "javascript"
 }
 ```
+
+### Streaming Responses with SSE
+```
+POST /api/mcp/stream
+{
+  "request_type": "user_query",
+  "query": "What are the features of GC Forms?"
+}
+```
+This endpoint returns a stream of Server-Sent Events (SSE) for real-time updates as the system:
+1. Searches for relevant documents
+2. Returns document matches incrementally
+3. Generates the AI response sentence by sentence
+
+The frontend can process these events to create a more dynamic and engaging user experience.
 
 ## Loading Additional Data
 

@@ -33,6 +33,9 @@
             border-radius: 4px;
             cursor: pointer;
         }
+        button.secondary {
+            background: #5f6368;
+        }
         #debug {
             margin: 20px 0;
             padding: 10px;
@@ -46,6 +49,38 @@
             border-radius: 4px;
             white-space: pre-wrap;
         }
+        .status {
+            color: #5f6368;
+            font-style: italic;
+            margin: 10px 0;
+        }
+        .thinking {
+            color: #0d652d;
+            font-weight: bold;
+        }
+        .tab-buttons {
+            margin-bottom: 15px;
+        }
+        .tab-button {
+            padding: 8px 15px;
+            background: #f1f3f4;
+            border: none;
+            border-radius: 4px 4px 0 0;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+        .tab-button.active {
+            background: #4285f4;
+            color: white;
+        }
+        .blinking {
+            animation: blink 1s linear infinite;
+        }
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
     </style>
 </head>
 <body>
@@ -56,6 +91,7 @@
         <textarea id="queryInput" placeholder="e.g., How do I authenticate with the GC Forms API?"></textarea>
         <div style="margin-top: 10px;">
             <button id="submitBtn">Submit Query</button>
+            <button id="streamBtn" class="secondary">Stream Response</button>
             <label style="margin-left: 10px;">
                 <input type="checkbox" id="generateResponse" checked> Generate AI Response
             </label>
@@ -63,14 +99,35 @@
         
         <div id="debug" style="display: none;"></div>
         
-        <div id="resultContainer" style="display: none;">
-            <h3>Retrieved Documents:</h3>
-            <div id="resultOutput" class="result"></div>
+        <div class="tab-buttons" style="display: none;">
+            <button class="tab-button active" data-tab="standard">Standard</button>
+            <button class="tab-button" data-tab="streaming">Streaming</button>
         </div>
         
-        <div id="generatedContainer" style="display: none;">
-            <h3>AI Generated Response:</h3>
-            <div id="generatedOutput" class="result" style="background-color: #e6f4ea;"></div>
+        <div id="standard-view">
+            <div id="resultContainer" style="display: none;">
+                <h3>Retrieved Documents:</h3>
+                <div id="resultOutput" class="result"></div>
+            </div>
+            
+            <div id="generatedContainer" style="display: none;">
+                <h3>AI Generated Response:</h3>
+                <div id="generatedOutput" class="result" style="background-color: #e6f4ea;"></div>
+            </div>
+        </div>
+        
+        <div id="streaming-view" style="display: none;">
+            <div id="streamStatus" class="status"></div>
+            
+            <div id="streamDocsContainer" style="display: none;">
+                <h3>Retrieved Documents (Streaming):</h3>
+                <div id="streamDocsOutput" class="result"></div>
+            </div>
+            
+            <div id="streamResponseContainer" style="display: none;">
+                <h3>AI Generated Response (Streaming):</h3>
+                <div id="streamResponseOutput" class="result" style="background-color: #e6f4ea;"></div>
+            </div>
         </div>
     </div>
     
@@ -89,6 +146,33 @@
             debugElement.appendChild(logEntry);
         }
         
+        // Show tab functionality
+        function setupTabButtons() {
+            const tabButtons = document.querySelectorAll('.tab-button');
+            
+            tabButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    const tabName = this.dataset.tab;
+                    
+                    // Update active button
+                    tabButtons.forEach(btn => btn.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    // Show correct view
+                    if (tabName === 'standard') {
+                        document.getElementById('standard-view').style.display = 'block';
+                        document.getElementById('streaming-view').style.display = 'none';
+                    } else {
+                        document.getElementById('standard-view').style.display = 'none';
+                        document.getElementById('streaming-view').style.display = 'block';
+                    }
+                });
+            });
+        }
+        
+        // Initialize tabs
+        setupTabButtons();
+        
         // Submit button handler
         document.getElementById('submitBtn').addEventListener('click', async function() {
             debugLog("Search button clicked");
@@ -101,6 +185,7 @@
             
             this.textContent = 'Loading...';
             this.disabled = true;
+            document.getElementById('streamBtn').disabled = true;
             
             try {
                 // Basic fetch for documents
@@ -137,6 +222,10 @@
                 }
                 
                 resultContainer.style.display = 'block';
+                
+                // Make standard view visible and active
+                document.getElementsByClassName('tab-buttons')[0].style.display = 'block';
+                document.querySelector('[data-tab="standard"]').click();
                 
                 // MCP part if checked
                 if (document.getElementById('generateResponse').checked) {
@@ -195,10 +284,202 @@
                 document.getElementById('resultContainer').style.display = 'block';
             }
             
-            // Reset button
+            // Reset buttons
             this.textContent = 'Submit Query';
             this.disabled = false;
+            document.getElementById('streamBtn').disabled = false;
         });
+        
+        // SSE Stream button handler
+        document.getElementById('streamBtn').addEventListener('click', function() {
+            const query = document.getElementById('queryInput').value.trim();
+            if (!query) {
+                debugLog("Empty query, not proceeding");
+                return;
+            }
+            
+            // Disable buttons while streaming
+            this.textContent = 'Streaming...';
+            this.disabled = true;
+            document.getElementById('submitBtn').disabled = true;
+            
+            // Clear previous responses
+            const statusElement = document.getElementById('streamStatus');
+            const docsContainer = document.getElementById('streamDocsContainer');
+            const docsOutput = document.getElementById('streamDocsOutput');
+            const responseContainer = document.getElementById('streamResponseContainer');
+            const responseOutput = document.getElementById('streamResponseOutput');
+            
+            statusElement.innerHTML = '<span class="thinking blinking">Initializing stream...</span>';
+            docsOutput.innerHTML = '';
+            responseOutput.innerHTML = '';
+            
+            // Show streaming view
+            document.getElementsByClassName('tab-buttons')[0].style.display = 'block';
+            document.querySelector('[data-tab="streaming"]').click();
+            
+            // Create the EventSource for SSE
+            handleSSERequest(query, statusElement, docsContainer, docsOutput, responseContainer, responseOutput);
+        });
+        
+        // Function to handle SSE request and events
+        function handleSSERequest(query, statusElement, docsContainer, docsOutput, responseContainer, responseOutput) {
+            debugLog("Setting up SSE connection for query:", query);
+            
+            // We'll use a workaround for POST with SSE
+            // First make a POST request to initiate the stream
+            fetch('/api/mcp/stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    request_type: "user_query",
+                    query: query
+                })
+            }).then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                
+                // Now set up SSE reader for the response
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                
+                // Process the stream
+                function processStream() {
+                    return reader.read().then(({ done, value }) => {
+                        if (done) {
+                            debugLog("Stream complete");
+                            // Process any remaining data in buffer
+                            processEvents(buffer);
+                            return;
+                        }
+                        
+                        // Decode the chunk and add to buffer
+                        buffer += decoder.decode(value, { stream: true });
+                        
+                        // Process complete events in buffer
+                        const events = buffer.split("\n\n");
+                        buffer = events.pop(); // Keep the last incomplete chunk in buffer
+                        
+                        // Process each complete event
+                        events.forEach(event => {
+                            if (event.trim()) {
+                                processEvent(event);
+                            }
+                        });
+                        
+                        // Continue reading
+                        return processStream();
+                    });
+                }
+                
+                // Start processing
+                return processStream();
+            }).catch(error => {
+                debugLog("SSE Error:", error.message);
+                statusElement.innerHTML = `<span style="color: red;">Error: ${error.message}</span>`;
+                
+                // Re-enable buttons
+                document.getElementById('streamBtn').textContent = 'Stream Response';
+                document.getElementById('streamBtn').disabled = false;
+                document.getElementById('submitBtn').disabled = false;
+            });
+            
+            // Process a complete SSE event
+            function processEvent(eventText) {
+                const lines = eventText.split("\n");
+                let eventType = null;
+                let eventData = null;
+                
+                // Parse event type and data
+                lines.forEach(line => {
+                    if (line.startsWith("event:")) {
+                        eventType = line.substring(6).trim();
+                    } else if (line.startsWith("data:")) {
+                        eventData = line.substring(5).trim();
+                        try {
+                            eventData = JSON.parse(eventData);
+                        } catch (e) {
+                            // Keep as string if not valid JSON
+                        }
+                    }
+                });
+                
+                if (eventType) {
+                    handleEvent(eventType, eventData);
+                }
+            }
+            
+            // Handle different event types
+            function handleEvent(type, data) {
+                debugLog(`SSE Event: ${type}`, data);
+                
+                switch (type) {
+                    case 'start':
+                        statusElement.innerHTML = '<span class="thinking blinking">Starting search...</span>';
+                        break;
+                        
+                    case 'thinking':
+                        statusElement.innerHTML = `<span class="thinking blinking">${data.message}</span>`;
+                        break;
+                        
+                    case 'document':
+                        if (!docsContainer.style.display || docsContainer.style.display === 'none') {
+                            docsContainer.style.display = 'block';
+                        }
+                        
+                        const docIndex = data.index;
+                        const similarity = (data.similarity * 100).toFixed(1);
+                        
+                        const docElement = document.createElement('div');
+                        docElement.style.marginBottom = '20px';
+                        docElement.innerHTML = `
+                            <p><strong>Result ${docIndex + 1}</strong> (Similarity: ${similarity}%)</p>
+                            <p>${data.text}</p>
+                            <p><small>Source: ${data.source || 'Unknown'}</small></p>
+                        `;
+                        
+                        docsOutput.appendChild(docElement);
+                        break;
+                        
+                    case 'sources':
+                        statusElement.innerHTML = `<span>Found ${data.sources.length} relevant documents</span>`;
+                        break;
+                        
+                    case 'generating':
+                        statusElement.innerHTML = `<span class="thinking blinking">${data.message}</span>`;
+                        responseContainer.style.display = 'block';
+                        responseOutput.innerHTML = '<p></p>';
+                        break;
+                        
+                    case 'content':
+                        // Append content to the last paragraph or create new one
+                        let lastP = responseOutput.querySelector('p:last-child');
+                        if (!lastP) {
+                            lastP = document.createElement('p');
+                            responseOutput.appendChild(lastP);
+                        }
+                        
+                        lastP.textContent += data.chunk;
+                        break;
+                        
+                    case 'end':
+                        statusElement.innerHTML = '<span>Processing complete</span>';
+                        
+                        // Re-enable buttons
+                        document.getElementById('streamBtn').textContent = 'Stream Response';
+                        document.getElementById('streamBtn').disabled = false;
+                        document.getElementById('submitBtn').disabled = false;
+                        break;
+                        
+                    default:
+                        debugLog(`Unknown event type: ${type}`, data);
+                }
+            }
+        }
     </script>
 </body>
 </html>
