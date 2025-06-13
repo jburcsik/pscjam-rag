@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GC Forms RAG API - Simple</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: white;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-radius: 8px;
+        }
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            min-height: 100px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #debug {
+            margin: 20px 0;
+            padding: 10px;
+            background-color: #f8d7da;
+            border-left: 4px solid #dc3545;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f1f3f4;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>GC Forms RAG API Tester</h1>
+        <p>Enter your query below:</p>
+        
+        <textarea id="queryInput" placeholder="e.g., How do I authenticate with the GC Forms API?"></textarea>
+        <div style="margin-top: 10px;">
+            <button id="submitBtn">Submit Query</button>
+            <label style="margin-left: 10px;">
+                <input type="checkbox" id="generateResponse" checked> Generate AI Response
+            </label>
+        </div>
+        
+        <div id="debug" style="display: none;"></div>
+        
+        <div id="resultContainer" style="display: none;">
+            <h3>Retrieved Documents:</h3>
+            <div id="resultOutput" class="result"></div>
+        </div>
+        
+        <div id="generatedContainer" style="display: none;">
+            <h3>AI Generated Response:</h3>
+            <div id="generatedOutput" class="result" style="background-color: #e6f4ea;"></div>
+        </div>
+    </div>
+    
+    <script>
+        // Debug function
+        function debugLog(message, data) {
+            const debugElement = document.getElementById('debug');
+            debugElement.style.display = 'block';
+            
+            console.log(message, data);
+            
+            const timestamp = new Date().toLocaleTimeString();
+            const formattedData = data ? JSON.stringify(data) : '';
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<strong>${timestamp}:</strong> ${message} ${formattedData}`;
+            debugElement.appendChild(logEntry);
+        }
+        
+        // Submit button handler
+        document.getElementById('submitBtn').addEventListener('click', async function() {
+            debugLog("Search button clicked");
+            
+            const query = document.getElementById('queryInput').value.trim();
+            if (!query) {
+                debugLog("Empty query, not proceeding");
+                return;
+            }
+            
+            this.textContent = 'Loading...';
+            this.disabled = true;
+            
+            try {
+                // Basic fetch for documents
+                debugLog("Making request to /query endpoint");
+                const response = await fetch('/query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ query: query })
+                });
+                
+                debugLog("Response status", response.status);
+                
+                const data = await response.json();
+                debugLog("Data received", data);
+                
+                // Display results
+                const resultContainer = document.getElementById('resultContainer');
+                const resultOutput = document.getElementById('resultOutput');
+                
+                if (data.results && data.results.length > 0) {
+                    let html = '';
+                    data.results.forEach((result, index) => {
+                        html += `<div style="margin-bottom: 20px;">
+                            <p><strong>Result ${index + 1}</strong> (Similarity: ${(result.similarity * 100).toFixed(1)}%)</p>
+                            <p>${result.text}</p>
+                            <p><small>Source: ${result.metadata?.source || 'Unknown'}</small></p>
+                        </div>`;
+                    });
+                    resultOutput.innerHTML = html;
+                } else {
+                    resultOutput.innerHTML = '<p>No results found. Try a different query.</p>';
+                }
+                
+                resultContainer.style.display = 'block';
+                
+                // MCP part if checked
+                if (document.getElementById('generateResponse').checked) {
+                    try {
+                        debugLog("Making request to /api/mcp endpoint");
+                        const mcpResponse = await fetch('/api/mcp', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ 
+                                request_type: "user_query",
+                                query: query
+                            })
+                        });
+                        
+                        debugLog("MCP response status", mcpResponse.status);
+                        
+                        const mcpData = await mcpResponse.json();
+                        debugLog("MCP data received", mcpData);
+                        
+                        // Display AI response
+                        const generatedContainer = document.getElementById('generatedContainer');
+                        const generatedOutput = document.getElementById('generatedOutput');
+                        
+                        if (mcpData && mcpData.response) {
+                            generatedOutput.innerHTML = `<p>${mcpData.response}</p>`;
+                            if (mcpData.sources) {
+                                generatedOutput.innerHTML += `<p><small><strong>Sources:</strong> ${mcpData.sources}</small></p>`;
+                            }
+                        } else {
+                            generatedOutput.innerHTML = '<p>Could not generate a response.</p>';
+                        }
+                        
+                        generatedContainer.style.display = 'block';
+                    } catch (error) {
+                        debugLog("MCP endpoint error", error.message);
+                        document.getElementById('generatedOutput').innerHTML = `<p>Error generating response: ${error.message}</p>`;
+                        document.getElementById('generatedContainer').style.display = 'block';
+                    }
+                }
+            } catch (error) {
+                debugLog("Error processing query", error.message);
+                document.getElementById('resultOutput').innerHTML = `<p>Error: ${error.message}</p>`;
+                document.getElementById('resultContainer').style.display = 'block';
+            }
+            
+            // Reset button
+            this.textContent = 'Submit Query';
+            this.disabled = false;
+        });
+    </script>
+</body>
+</html>

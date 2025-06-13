@@ -5,7 +5,7 @@ import requests
 from bs4 import BeautifulSoup
 import time
 import os
-import json
+import jsonCopilot: Open Copilot Chat
 
 class WebScraper:
     """A scraper for the Canada.ca Forms website and its subpages."""

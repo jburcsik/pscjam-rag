@@ -5,11 +5,8 @@ from flask import Flask, request, jsonify, send_from_directory
 import os
 from rag_engine import RAGEngine
 from mcp_support import MCPSupportEngine
-from flask_cors import CORS
 
 app = Flask(__name__)
-# Enable CORS for all routes
-CORS(app)
 rag_engine = RAGEngine()
 mcp_engine = MCPSupportEngine()
 
@@ -82,11 +79,6 @@ def initialize_data():
 def home():
     """Home page that serves the demo interface."""
     return send_from_directory('static', 'index.html')
-    
-@app.route('/simple')
-def simple():
-    """A simplified version of the demo interface."""
-    return send_from_directory('static', 'simple_index.html')
 
 @app.route('/static/<path:filename>')
 def serve_static(filename):
@@ -97,19 +89,12 @@ def serve_static(filename):
 def query_endpoint():
     """Simple query endpoint for external consumers."""
     try:
-        print(f"Query endpoint called with method: {request.method}")
-        print(f"Request data: {request.data}")
         data = request.get_json()
-        print(f"Parsed JSON data: {data}")
-        
         if not data or 'query' not in data:
-            print("Error: No query provided in request")
             return jsonify({"error": "No query provided"}), 400
             
         query_text = data['query']
-        print(f"Processing query: {query_text}")
         results = rag_engine.query(query_text)
-        print(f"Found {len(results)} results")
         
         return jsonify({
             "query": query_text,
@@ -138,21 +123,10 @@ def search():
 def mcp_endpoint():
     """MCP endpoint for integration with LLM systems."""
     try:
-        print(f"MCP endpoint called with method: {request.method}")
-        print(f"MCP request data: {request.data}")
         data = request.get_json()
-        print(f"MCP parsed JSON data: {data}")
-        
-        if not data or 'request_type' not in data:
-            print("Error: Invalid MCP request format")
-            return jsonify({"error": "Invalid request format"}), 400
-            
-        print(f"Processing MCP request type: {data.get('request_type')}")
         response = mcp_engine.process_mcp_request(data)
-        print(f"MCP response: {response}")
         return jsonify(response)
     except Exception as e:
-        print(f"Error in MCP endpoint: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/health')

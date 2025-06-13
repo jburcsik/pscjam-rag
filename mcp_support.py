@@ -25,6 +25,14 @@ class MCPSupportEngine:
         """Add document to the knowledge base."""
         return self.rag_engine.add_document(text, metadata)
     
+    def load_embeddings(self, file_path="mcp_embeddings_cache.json"):
+        """Load embeddings from cache file."""
+        return self.rag_engine.vector_store.load_embeddings(file_path)
+    
+    def save_embeddings(self, file_path="mcp_embeddings_cache.json"):
+        """Save embeddings to cache file."""
+        return self.rag_engine.vector_store.save_embeddings(file_path)
+    
     def inform_user(self, query_text, max_results=3):
         """
         Retrieve relevant information to answer a user's question.
@@ -92,3 +100,108 @@ class MCPSupportEngine:
             "context_used": context,
             "message": "This would generate code based on the requirements and documentation."
         }
+    
+    def process_mcp_request(self, data):
+        """
+        Process an MCP request and generate a response based on the request type.
+        
+        Args:
+            data (dict): The request data from the API containing request_type and query
+            
+        Returns:
+            dict: Response with appropriate data based on request type
+        """
+        print(f"Processing MCP request with data: {data}")
+        
+        # Handle different types of requests
+        request_type = data.get('request_type')
+        
+        if request_type == 'user_query':
+            query = data.get('query')
+            if not query:
+                return {"error": "No query provided in request"}
+            
+            print(f"Processing user query: {query}")
+            
+            # Force a re-query using the same vector store as the RAG engine
+            # since the rag_engine.query method might have internal state
+            print(f"Directly searching vector store with query: {query}")
+            embedding = self.rag_engine.vector_store.create_embedding(query)
+            results = self.rag_engine.vector_store.search(embedding)
+            print(f"MCP query found {len(results)} results")
+            
+            if not results:
+                print("No results found for MCP query")
+                return {
+                    "query": query,
+                    "response": "I couldn't find any information related to your query.",
+                    "sources": []
+                }
+            
+            # Format source references
+            sources = []
+            for i, result in enumerate(results[:3]):  # Use top 3 results
+                source = result.get('metadata', {}).get('source', 'Documentation')
+                sources.append(f"{source} (relevance: {result['similarity']:.2f})")
+            
+            print(f"Sources for MCP response: {sources}")
+            
+            # Create a human-like response based on the results
+            response = self._generate_response_from_context(query, results)
+            print(f"Generated MCP response: {response[:100]}...")
+            
+            return {
+                "query": query,
+                "response": response,
+                "sources": ", ".join(sources)
+            }
+            
+        elif request_type == 'code_generation':
+            requirements = data.get('requirements', '')
+            language = data.get('language', 'python')
+            
+            return self.generate_code(requirements, language)
+            
+        else:
+            return {"error": f"Unknown request type: {request_type}"}
+    
+    def _generate_response_from_context(self, query, results):
+        """
+        Generate a human-like response based on retrieved results.
+        
+        Args:
+            query (str): The user's query
+            results (list): The results from the RAG engine
+            
+        Returns:
+            str: A human-like response
+        """
+        if not results:
+            return "I don't have information about that."
+        
+        try:    
+            # Extract the most relevant result
+            top_result = results[0]['text']
+            
+            # Format a response
+            response = f"Based on the GC Forms documentation, {top_result}\n\n"
+            
+            # Add information from other results if they offer something different
+            if len(results) > 1:
+                for result in results[1:3]:  # Add info from next 2 results
+                    # Add only if it adds new information (simple heuristic)
+                    if len(result['text']) > 20 and result['text'] not in response:
+                        response += f"Additionally, {result['text']}\n\n"
+            
+            return response.strip()
+        except Exception as e:
+            print(f"Error generating response from context: {str(e)}")
+            print(f"Results were: {results}")
+            
+            # Fallback response that still provides value
+            text_list = [r.get('text', '') for r in results if isinstance(r, dict) and 'text' in r]
+            if text_list:
+                combined_text = ' '.join(text_list[:2])  # Use first 2 results
+                return f"Here's what I found about GC Forms: {combined_text}"
+            else:
+                return "I found some information about GC Forms but couldn't format it properly."

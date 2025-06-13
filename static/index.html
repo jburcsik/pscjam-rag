@@ -68,6 +68,12 @@
             overflow-x: auto;
             font-family: monospace;
         }
+        #debug {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f8d7da;
+            border-left: 4px solid #dc3545;
+        }
     </style>
 </head>
 <body>
@@ -80,11 +86,27 @@
             <textarea id="queryInput" placeholder="e.g., How do I authenticate with the GC Forms API?"></textarea>
             <div style="margin-top: 10px;">
                 <button id="submitBtn">Submit Query</button>
+                <label style="margin-left: 10px;">
+                    <input type="checkbox" id="generateResponse" checked>
+                    Generate AI Response
+                </label>
+            </div>
+            <div style="margin-top: 10px; padding: 10px; background-color: #fff3cd; border-left: 4px solid #ffc107;">
+                <p><strong>Note:</strong> The AI generation feature uses the /api/mcp endpoint. If you don't see AI-generated responses, check the browser's console (F12) for any errors.</p>
+                <p>URL endpoint: <code id="currentEndpoint"></code></p>
+                <script>document.getElementById("currentEndpoint").textContent = window.location.origin + "/api/mcp";</script>
             </div>
         </div>
         
+        <div id="debug"></div>
+        
+        <div id="generatedContainer" style="display: none; margin-bottom: 20px;">
+            <h3>AI Generated Response:</h3>
+            <div id="generatedOutput" class="result" style="background-color: #e6f4ea; border-left: 4px solid #34a853;"></div>
+        </div>
+
         <div id="resultContainer" style="display: none;">
-            <h3>Results:</h3>
+            <h3>Retrieved Documents:</h3>
             <div id="resultOutput" class="result"></div>
         </div>
         
@@ -103,7 +125,7 @@
             <div class="code">import requests
 import json
 
-url = "https://pscjam-rag-1.jesseburcsik.repl.co/query"
+url = "http://localhost:5001/query"
 payload = {"query": "How do I authenticate with the GC Forms API?"}
 headers = {"Content-Type": "application/json"}
 
@@ -113,7 +135,7 @@ print(data["results"])
 </div>
             
             <h3>Sample Code (JavaScript)</h3>
-            <div class="code">fetch('https://pscjam-rag-1.jesseburcsik.repl.co/query', {
+            <div class="code">fetch('http://localhost:5001/query', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -131,15 +153,37 @@ print(data["results"])
     </div>
     
     <script>
+        // Debug function to log messages both to console and to page
+        function debugLog(message, data) {
+            const debugElement = document.getElementById('debug');
+            debugElement.style.display = 'block';
+            
+            console.log(message, data);
+            
+            const timestamp = new Date().toLocaleTimeString();
+            const formattedData = data ? JSON.stringify(data) : '';
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<strong>${timestamp}:</strong> ${message} ${formattedData}`;
+            debugElement.appendChild(logEntry);
+        }
+        
         document.getElementById('submitBtn').addEventListener('click', async () => {
+            debugLog("Search button clicked");
             const query = document.getElementById('queryInput').value.trim();
-            if (!query) return;
+            debugLog("Query text:", query);
+            
+            if (!query) {
+                debugLog("Empty query, not proceeding");
+                return;
+            }
             
             // Show loading state
             document.getElementById('submitBtn').textContent = 'Loading...';
             document.getElementById('submitBtn').disabled = true;
             
             try {
+                // First query endpoint for documents
+                debugLog("Making request to /query endpoint");
                 const response = await fetch('/query', {
                     method: 'POST',
                     headers: {
@@ -148,7 +192,14 @@ print(data["results"])
                     body: JSON.stringify({ query }),
                 });
                 
+                debugLog("Response status:", response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                
                 const data = await response.json();
+                debugLog("Data received:", data);
                 
                 // Format and display the results
                 const resultContainer = document.getElementById('resultContainer');
@@ -169,14 +220,61 @@ print(data["results"])
                 }
                 
                 resultContainer.style.display = 'block';
+                
+                // If generate AI response is checked
+                if (document.getElementById('generateResponse').checked) {
+                    try {
+                        debugLog("Calling MCP endpoint with query:", query);
+                        
+                        const mcpResponse = await fetch('/api/mcp', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ 
+                                request_type: "user_query",
+                                query: query 
+                            }),
+                        });
+                        
+                        debugLog("MCP response status:", mcpResponse.status);
+                        
+                        if (!mcpResponse.ok) {
+                            throw new Error(`MCP HTTP error! Status: ${mcpResponse.status}`);
+                        }
+                        
+                        const mcpData = await mcpResponse.json();
+                        debugLog("MCP data received:", mcpData);
+                        
+                        // Display generated response
+                        const generatedContainer = document.getElementById('generatedContainer');
+                        const generatedOutput = document.getElementById('generatedOutput');
+                        
+                        if (mcpData && mcpData.response) {
+                            generatedOutput.innerHTML = `<p>${mcpData.response}</p>`;
+                            if (mcpData.sources) {
+                                generatedOutput.innerHTML += `<p><small><strong>Sources:</strong> ${mcpData.sources}</small></p>`;
+                            }
+                        } else {
+                            generatedOutput.innerHTML = '<p>Could not generate a response.</p>';
+                        }
+                        
+                        generatedContainer.style.display = 'block';
+                    } catch (mcpError) {
+                        debugLog("Error with MCP endpoint:", mcpError.message);
+                        document.getElementById('generatedOutput').innerHTML = `<p>Error generating response: ${mcpError.message}</p>`;
+                        document.getElementById('generatedContainer').style.display = 'block';
+                    }
+                }
             } catch (error) {
+                debugLog("Error processing query:", error.message);
                 document.getElementById('resultOutput').innerHTML = `<p>Error: ${error.message}</p>`;
                 document.getElementById('resultContainer').style.display = 'block';
+            } finally {
+                // Reset button state
+                document.getElementById('submitBtn').textContent = 'Submit Query';
+                document.getElementById('submitBtn').disabled = false;
             }
-            
-            // Reset button
-            document.getElementById('submitBtn').textContent = 'Submit Query';
-            document.getElementById('submitBtn').disabled = false;
         });
     </script>
 </body>
