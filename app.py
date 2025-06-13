@@ -87,7 +87,7 @@ def home():
     
 @app.route('/simple')
 def simple():
-    """A simplified version of the demo interface."""
+    """The simple version of the demo interface (for backup)."""
     return send_from_directory('static', 'simple_index.html')
 
 @app.route('/static/<path:filename>')

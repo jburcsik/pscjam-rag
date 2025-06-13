@@ -83,20 +83,28 @@ def stream_response_generator(query, rag_engine, mcp_engine):
                 yield format_sse_event('content', {'chunk': chunk})
                 time.sleep(0.2)  # Small delay between chunks
         else:
-            # Generate response from context
-            response = mcp_engine._generate_response_from_context(query, results)
-            
-            # Break into sentences for streaming effect
-            sentences = []
-            for paragraph in response.split('\n\n'):
-                for sentence in paragraph.split('. '):
-                    if sentence.strip():
-                        sentences.append(sentence.strip() + ('' if sentence.endswith('.') else '.'))
-            
-            # Stream each sentence
-            for sentence in sentences:
-                yield format_sse_event('content', {'chunk': sentence + ' '})
-                time.sleep(0.2)
+            # Generate response using OpenAI completions API
+            try:
+                # First try with OpenAI completions
+                response = mcp_engine._generate_response_from_context(query, results)
+                
+                # Break into sentences for streaming effect
+                sentences = []
+                for paragraph in response.split('\n\n'):
+                    for sentence in paragraph.split('. '):
+                        if sentence.strip():
+                            sentences.append(sentence.strip() + ('' if sentence.endswith('.') else '.'))
+                
+                # Stream each sentence
+                for sentence in sentences:
+                    yield format_sse_event('content', {'chunk': sentence + ' '})
+                    time.sleep(0.2)
+            except Exception as e:
+                # Log the error
+                print(f"Error in streaming response generation: {str(e)}")
+                # Fall back to a simple response
+                fallback_response = "I found information related to your query, but encountered an issue generating a detailed response. Please try again."
+                yield format_sse_event('content', {'chunk': fallback_response})
     else:
         # No results case
         yield format_sse_event('content', {'chunk': "I couldn't find any information related to your query in the GC Forms documentation."})

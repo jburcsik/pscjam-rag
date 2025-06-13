@@ -237,7 +237,7 @@ class MCPSupportEngine:
     
     def _generate_response_from_context(self, query, results):
         """
-        Generate a human-like response based on retrieved results.
+        Generate a human-like response based on retrieved results using OpenAI's completion API.
         
         Args:
             query (str): The user's query
@@ -253,96 +253,204 @@ class MCPSupportEngine:
         print(f"Generating response from {len(results)} results")
         print(f"Top result similarity: {results[0]['similarity']:.4f}")
         
-        try:    
-            # Skip if the similarity is too low
-            if results[0]['similarity'] < 0.25:
-                print(f"Top similarity score ({results[0]['similarity']:.4f}) is below minimum threshold")
-                # For the specific "is this tool useful" query, we can give a hardcoded response
-                if "tool useful" in query.lower() or "useful tool" in query.lower():
-                    return ("Based on the GC Forms documentation, this tool is designed to help users create and manage forms efficiently. "
-                            "It offers features for data collection, surveys, and feedback, with capabilities for form sharing and result collection. "
-                            "The documentation suggests it's useful for understanding how people use the forms, which helps improve the service.")
-                return "I couldn't find specific information about that in the GC Forms documentation."
+        # Skip if the similarity is too low
+        if results[0]['similarity'] < 0.25:
+            print(f"Top similarity score ({results[0]['similarity']:.4f}) is below minimum threshold")
+            # For the specific "is this tool useful" query, we can give a hardcoded response
+            if "tool useful" in query.lower() or "useful tool" in query.lower():
+                return ("Based on the GC Forms documentation, this tool is designed to help users create and manage forms efficiently. "
+                        "It offers features for data collection, surveys, and feedback, with capabilities for form sharing and result collection. "
+                        "The documentation suggests it's useful for understanding how people use the forms, which helps improve the service.")
+            return "I couldn't find specific information about that in the GC Forms documentation."
+        
+        try:
+            # Format the prompt with the retrieved context
+            prompt = self._format_prompt_from_results(query, results)
             
-            # Extract the query keywords to check for relevance
-            keywords = query.lower().split()
+            # Call OpenAI API to generate a response
+            response = self._call_openai_completion(prompt)
             
-            # Start with a confident introduction based on result quality
-            if results[0]['similarity'] > 0.8:
-                response = f"According to the GC Forms documentation, "
-            elif results[0]['similarity'] > 0.6:
-                response = f"Based on the available GC Forms documentation, "
-            elif results[0]['similarity'] > 0.4:
-                response = f"I found some information that might help. "
-            else:
-                response = f"I found some related information, although it may not directly answer your question: "
+            # If API call failed, fall back to the rule-based approach
+            if not response:
+                print("OpenAI API call failed, falling back to rule-based response generation")
+                return self._generate_rule_based_response(query, results)
             
-            # Extract the most relevant result
-            top_result = results[0]['text'].strip()
-            
-            # Check for exact answer matches in the text (simple heuristic)
-            direct_answer_lines = []
-            for line in top_result.split('\n'):
-                clean_line = line.strip()
-                if clean_line and any(keyword in clean_line.lower() for keyword in keywords) and len(clean_line) < 300:
-                    direct_answer_lines.append(clean_line)
-            
-            # If we found specific lines that directly answer the question, use those
-            if direct_answer_lines:
-                response += " ".join(direct_answer_lines[:2])
-            else:
-                # Otherwise use the first 2-3 paragraphs of the top result to keep it concise
-                paragraphs = [p.strip() for p in top_result.split('\n\n') if p.strip()]
-                if paragraphs:
-                    response += " ".join(paragraphs[:2])
-                else:
-                    # If no paragraphs, use the first few sentences
-                    sentences = [s.strip() + "." for s in top_result.split('.') if s.strip()]
-                    response += " ".join(sentences[:3])
-            
-            # Add information from other results if they offer something different
-            added_info = False
-            if len(results) > 1:
-                for i, result in enumerate(results[1:3]):  # Add info from next 2 results
-                    # Only add if similarity is decent
-                    if result['similarity'] > 0.3:
-                        result_text = result['text'].strip()
-                        
-                        # Extract key sentences that might contain relevant information
-                        key_sentences = []
-                        for sentence in result_text.split('.'):
-                            clean_sentence = sentence.strip()
-                            if clean_sentence and any(keyword in clean_sentence.lower() for keyword in keywords) and len(clean_sentence) > 20:
-                                if clean_sentence not in response:  # Avoid duplication
-                                    key_sentences.append(clean_sentence)
-                        
-                        if key_sentences:
-                            if not added_info:
-                                response += "\n\nAdditionally, " + ". ".join(key_sentences[:2]) + "."
-                                added_info = True
-                            else:
-                                response += "\n\nFurthermore, " + ". ".join(key_sentences[:2]) + "."
-            
-            # Add a helpful conclusion
-            response += "\n\nIs there anything specific about GC Forms you would like me to explain further?"
-                
-            return response.strip()
+            return response
             
         except Exception as e:
             print(f"Error generating response from context: {str(e)}")
             print(f"Results were: {results}")
             
-            # Fallback response that still provides value
-            text_list = [r.get('text', '') for r in results if isinstance(r, dict) and 'text' in r]
-            if text_list:
-                # Use just the first paragraph or sentence of each result to keep it concise
-                summarized_texts = []
-                for text in text_list[:2]:
-                    first_paragraph = text.split('\n\n')[0] if '\n\n' in text else text
-                    if len(first_paragraph) > 150:
-                        first_paragraph = first_paragraph[:150] + "..."
-                    summarized_texts.append(first_paragraph)
-                
-                return f"Here's what I found about GC Forms: {' '.join(summarized_texts)}"
+            # Fall back to rule-based approach
+            return self._generate_rule_based_response(query, results)
+    
+    def _format_prompt_from_results(self, query, results):
+        """
+        Format a prompt for the OpenAI completion API using the retrieved results.
+        
+        Args:
+            query (str): The user's query
+            results (list): The results from the RAG engine
+            
+        Returns:
+            str: A formatted prompt
+        """
+        # Start with a system prompt
+        prompt = "You are a helpful assistant providing information about GC Forms based on the following documentation excerpts.\n\n"
+        
+        # Add the retrieved documents with their relevance scores
+        prompt += "### Retrieved Documentation:\n"
+        for i, result in enumerate(results[:3]):  # Use top 3 results
+            source = result.get('metadata', {}).get('source', 'Documentation')
+            similarity = result['similarity']
+            similarity_percent = int(similarity * 100)
+            
+            prompt += f"\n--- Document {i+1} (Relevance: {similarity_percent}%) from {source} ---\n"
+            prompt += result['text'].strip() + "\n"
+        
+        # Add instructions for the response generation
+        prompt += "\n### Instructions:\n"
+        prompt += "- Answer the user's question based ONLY on the information provided above.\n"
+        prompt += "- If the documentation doesn't contain relevant information to answer the question, say so clearly.\n"
+        prompt += "- Be concise but informative. Aim for 2-3 paragraphs maximum.\n"
+        prompt += "- Do not include phrases like 'According to the documentation' or references to document numbers in your response.\n"
+        prompt += "- Format your response to be friendly and helpful.\n"
+        
+        # Add the user query
+        prompt += f"\n### User Question:\n{query}\n\n### Your Response:"
+        
+        return prompt
+    
+    def _generate_rule_based_response(self, query, results):
+        """
+        Generate a human-like response based on retrieved results using rule-based approach.
+        This is used as a fallback when the OpenAI API call fails.
+        
+        Args:
+            query (str): The user's query
+            results (list): The results from the RAG engine
+            
+        Returns:
+            str: A human-like response
+        """
+        # Extract the query keywords to check for relevance
+        keywords = query.lower().split()
+        
+        # Start with a confident introduction based on result quality
+        if results[0]['similarity'] > 0.8:
+            response = f"According to the GC Forms documentation, "
+        elif results[0]['similarity'] > 0.6:
+            response = f"Based on the available GC Forms documentation, "
+        elif results[0]['similarity'] > 0.4:
+            response = f"I found some information that might help. "
+        else:
+            response = f"I found some related information, although it may not directly answer your question: "
+        
+        # Extract the most relevant result
+        top_result = results[0]['text'].strip()
+        
+        # Check for exact answer matches in the text (simple heuristic)
+        direct_answer_lines = []
+        for line in top_result.split('\n'):
+            clean_line = line.strip()
+            if clean_line and any(keyword in clean_line.lower() for keyword in keywords) and len(clean_line) < 300:
+                direct_answer_lines.append(clean_line)
+        
+        # If we found specific lines that directly answer the question, use those
+        if direct_answer_lines:
+            response += " ".join(direct_answer_lines[:2])
+        else:
+            # Otherwise use the first 2-3 paragraphs of the top result to keep it concise
+            paragraphs = [p.strip() for p in top_result.split('\n\n') if p.strip()]
+            if paragraphs:
+                response += " ".join(paragraphs[:2])
             else:
-                return "I found some information about GC Forms but couldn't format it properly."
+                # If no paragraphs, use the first few sentences
+                sentences = [s.strip() + "." for s in top_result.split('.') if s.strip()]
+                response += " ".join(sentences[:3])
+        
+        # Add information from other results if they offer something different
+        added_info = False
+        if len(results) > 1:
+            for i, result in enumerate(results[1:3]):  # Add info from next 2 results
+                # Only add if similarity is decent
+                if result['similarity'] > 0.3:
+                    result_text = result['text'].strip()
+                    
+                    # Extract key sentences that might contain relevant information
+                    key_sentences = []
+                    for sentence in result_text.split('.'):
+                        clean_sentence = sentence.strip()
+                        if clean_sentence and any(keyword in clean_sentence.lower() for keyword in keywords) and len(clean_sentence) > 20:
+                            if clean_sentence not in response:  # Avoid duplication
+                                key_sentences.append(clean_sentence)
+                    
+                    if key_sentences:
+                        if not added_info:
+                            response += "\n\nAdditionally, " + ".".join(key_sentences[:2]) + "."
+                            added_info = True
+                        else:
+                            response += "\n\nFurthermore, " + ".".join(key_sentences[:2]) + "."
+        
+        # Add a helpful conclusion
+        response += "\n\nIs there anything specific about GC Forms you would like me to explain further?"
+            
+        return response.strip()
+    
+    def _call_openai_completion(self, prompt, max_tokens=500, temperature=0.7):
+        """
+        Call OpenAI's Chat Completions API to generate a response.
+        
+        Args:
+            prompt (str): The prompt to send to the API
+            max_tokens (int): Maximum number of tokens to generate
+            temperature (float): Controls randomness (0-1)
+            
+        Returns:
+            str: The generated response text or None if the call fails
+        """
+        try:
+            from api_secrets import get_api_endpoint
+            
+            # Get OpenAI API credentials
+            api_key = self.api_key or get_api_key()
+            
+            # Use chat completions API endpoint
+            chat_endpoint = "https://api.openai.com/v1/chat/completions"
+            
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            }
+            
+            # Structure the prompt for the chat API
+            data = {
+                "model": "gpt-3.5-turbo",  # You can use "gpt-4" if available
+                "messages": [
+                    {"role": "system", "content": "You are a helpful assistant that answers questions about GC Forms based on provided documentation. Keep your answers clear, informative, and focused on the provided context. If the context doesn't contain relevant information, acknowledge the limitations and avoid speculating."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": temperature,
+                "max_tokens": max_tokens
+            }
+            
+            print(f"Calling OpenAI Chat API to generate response")
+            response = requests.post(
+                chat_endpoint,
+                headers=headers,
+                data=json.dumps(data),
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                generated_text = result["choices"][0]["message"]["content"].strip()
+                print(f"Successfully received response from OpenAI ({len(generated_text)} chars)")
+                return generated_text
+            else:
+                print(f"API Error: {response.status_code}, {response.text}")
+                return None
+                
+        except Exception as e:
+            print(f"Error calling OpenAI completion API: {str(e)}")
+            return None
