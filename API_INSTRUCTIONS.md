@@ -1,6 +1,6 @@
 # GC Forms RAG API
 
-This is a Retrieval-Augmented Generation (RAG) system for GC Forms documentation. It provides accurate, context-specific answers about GC Forms and its API by using vector embeddings to find the most relevant content.
+This is a Retrieval-Augmented Generation (RAG) system for GC Forms documentation. It provides accurate, context-specific answers about GC Forms and its API by using vector embeddings to find the most relevant content and generating helpful responses using OpenAI's GPT models.
 
 ## Live Demo
 
@@ -9,14 +9,16 @@ https://pscjam-rag-1.jesseburcsik.repl.co/
 
 ## Features
 
-- **Semantic Search**: Uses OpenAI embeddings for accurate, meaning-based search
+- **Semantic Search**: Uses OpenAI embeddings (text-embedding-3-small model) for accurate, meaning-based search
+- **AI-Generated Responses**: Provides natural language answers using OpenAI's GPT models
 - **Data Sources**: Combines content from:
   - Canada.ca Forms website documentation
   - Forms API technical documentation
 - **Persistent Cache**: Saves embeddings to reduce API costs and improve load times
 - **Simple API**: Easy-to-use REST API for integration
+- **Streaming Support**: Real-time response streaming via Server-Sent Events (SSE)
 - **MCP Support**: Compatible with Model Context Protocol servers
-- **Web Interface**: Browser-based testing interface included
+- **Simplified Web Interface**: Clean, streamlined browser-based testing interface
 
 ## Setup and Deployment
 
@@ -63,7 +65,12 @@ docker run -p 8080:8080 -e OPENAI_API_KEY=your_api_key_here gcforms-rag
 
 ### Option 1: Web Interface
 
-Visit the URL above to use the web interface. Simply enter your question and click "Submit Query".
+Visit the URL above to use the streamlined web interface. Simply enter your question and:
+
+- Click "Submit Query" for a standard response (AI-generated response followed by retrieved documents)
+- Click "Stream Response" for a real-time streaming response using Server-Sent Events
+
+The checkbox "Generate AI Response" is enabled by default to provide AI-generated answers using OpenAI's GPT models.
 
 ### Option 2: API Endpoint
 
@@ -113,15 +120,48 @@ import json
 
 url = "https://pscjam-rag-1.jesseburcsik.repl.co/api/mcp"
 payload = {
-    "messages": [
-        {"role": "user", "content": "How do I authenticate with the GC Forms API?"}
-    ]
+    "request_type": "user_query",
+    "query": "How do I authenticate with the GC Forms API?"
 }
 headers = {"Content-Type": "application/json"}
 
 response = requests.post(url, headers=headers, data=json.dumps(payload))
 data = response.json()
 print(data)
+```
+
+### Option 1a: Streaming Responses with /api/mcp/stream
+
+For real-time streaming responses using Server-Sent Events (SSE):
+
+```python
+import requests
+import sseclient
+import json
+
+url = "https://pscjam-rag-1.jesseburcsik.repl.co/api/mcp/stream"
+payload = {
+    "request_type": "user_query",
+    "query": "How do I authenticate with the GC Forms API?"
+}
+headers = {"Content-Type": "application/json"}
+
+response = requests.post(url, headers=headers, json=payload, stream=True)
+client = sseclient.SSEClient(response)
+
+for event in client.events():
+    if event.event == "document":
+        # Process each retrieved document
+        doc_data = json.loads(event.data)
+        print(f"Document {doc_data['index']}: {doc_data['text'][:50]}...")
+    elif event.event == "content":
+        # Process each chunk of generated content
+        content_data = json.loads(event.data)
+        print(content_data["chunk"], end="")
+    elif event.event == "end":
+        # End of stream
+        print("\nStream complete")
+        break
 ```
 
 ### Option 2: Enrich Your MCP Server

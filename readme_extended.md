@@ -10,6 +10,7 @@ This document provides a comprehensive overview of the GC Forms Retrieval-Augmen
    - [Vector Storage](#vector-storage)
    - [RAG Engine](#rag-engine)
    - [MCP Support](#mcp-support)
+   - [Streaming Support](#streaming-support)
 3. [Data Sources](#data-sources)
    - [External Data Integration](#external-data-integration)
    - [Web Scraping](#web-scraping)
@@ -32,16 +33,18 @@ This document provides a comprehensive overview of the GC Forms Retrieval-Augmen
 
 ## System Overview
 
-The GC Forms RAG system is designed to provide accurate, context-specific answers about the GC Forms platform and its API by using vector embeddings to find relevant content. The system combines document processing, vector storage, and retrieval to create a powerful RAG application that can be consumed via API endpoints.
+The GC Forms RAG system is designed to provide accurate, context-specific answers about the GC Forms platform and its API by using vector embeddings to find relevant content and OpenAI's GPT models to generate helpful responses. The system combines document processing, vector storage, retrieval, and generative AI to create a powerful RAG application that can be consumed via API endpoints or through a simplified web interface.
 
 Key features include:
 
 - **Semantic Search**: Uses OpenAI's text-embedding-3-small model for accurate meaning-based search
+- **AI-Generated Responses**: Provides natural language answers using OpenAI's GPT models
 - **Multiple Data Sources**: Combines content from the Canada.ca Forms website and API documentation
 - **Embedding Persistence**: Saves embeddings to JSON files to reduce API costs and improve load times
 - **REST API**: Easy-to-use endpoints for integration with other applications
+- **Streaming Support**: Provides real-time responses via Server-Sent Events (SSE)
 - **MCP Support**: Compatible with Model Context Protocol servers for LLM integration
-- **Web Interface**: Browser-based interface for testing the API
+- **Simplified Web Interface**: Streamlined browser-based interface for testing the API
 - **Multiple Deployment Options**: Support for local, Replit, and Docker deployments
 
 ## Core Components
@@ -92,10 +95,32 @@ The RAG Engine acts as a coordinator between the Document Processor and Vector S
 The MCP Support Engine extends the basic RAG engine to support integration with Model Context Protocol (MCP) servers. It provides enhanced functionality for informational queries and code generation.
 
 **Key Functions**:
-- `inform_user(query_text, max_results=3)`: Retrieves relevant information to answer a user's question
-- `generate_code(requirements, language="python")`: Generates code based on requirements and retrieved documentation
+- `process_mcp_request(data)`: Processes MCP requests based on request_type
+- `_generate_response_from_context(query, results)`: Generates AI responses using OpenAI's GPT models
+- `_call_openai_completion(prompt)`: Makes API calls to OpenAI's chat completion endpoint
+- `_generate_rule_based_response(query, results)`: Provides a fallback if API calls fail
 
 This component is designed to provide a bridge between the RAG system and MCP servers, making it easy to enhance LLMs with domain-specific knowledge about GC Forms.
+
+### Streaming Support
+
+**Files**: `streaming.py`, `app.py` (`mcp_stream_endpoint` function)
+
+The streaming support provides real-time responses using Server-Sent Events (SSE), allowing for a more interactive user experience.
+
+**Key Functions**:
+- `sse_response(generator_func)`: Creates a streaming response for SSE
+- `stream_response_generator(query, rag_engine, mcp_engine)`: Generates a stream of events
+- Events include:
+  - `start`: Indicates the stream has started
+  - `thinking`: Updates on processing progress
+  - `document`: Each retrieved document with its content
+  - `sources`: Summary of found sources
+  - `generating`: Indicates AI response generation has started
+  - `content`: Chunks of the AI-generated response
+  - `end`: Indicates the stream has completed
+
+This mechanism allows for a responsive interface where users can see documents and AI-generated responses appear in real-time as they're processed.
 
 ## Data Sources
 
@@ -129,13 +154,18 @@ These modules handle the collection of data from web sources. The Web Scraper ex
 This file implements the web server and API endpoints for the RAG system with embedding caching capabilities. It provides both retrieval functionality and AI-generated responses.
 
 **Key Endpoints**:
-- `GET /`: Home page with API tester
-- `GET /query`: Simple GET-based query endpoint
-- `POST /query`: More flexible POST-based query endpoint
-- `POST /api/inform`: Endpoint for informational queries
-- `POST /api/mcp`: MCP endpoint for integration with LLM systems
-- `POST /api/code`: Endpoint for code generation
+- `GET /`: Home page with streamlined API tester interface
+- `GET /simple`: Alternative simple interface (backup)
+- `POST /query`: POST-based query endpoint for retrieving relevant documents
+- `POST /api/search`: Alternative search endpoint, functionally identical to `/query`
+- `POST /api/mcp`: MCP endpoint for integration with LLM systems, returns AI-generated responses
+- `POST /api/mcp/stream`: Streaming version of the MCP endpoint using Server-Sent Events (SSE)
 - `GET /health`: Health check endpoint
+
+The main endpoints have been streamlined to focus on core functionality:
+1. Document retrieval (`/query` and `/api/search`)
+2. AI-generated responses (`/api/mcp`)
+3. Streaming responses (`/api/mcp/stream`)
 
 ### CORS Support
 
@@ -155,7 +185,16 @@ def add_cors_headers(response):
 
 **File**: `static/index.html`
 
-The web interface provides a simple way to interact with the RAG system directly from a browser. It includes a form for entering queries and displays the results in a user-friendly format.
+The web interface provides a simplified way to interact with the RAG system directly from a browser. It includes:
+
+- A form for entering queries
+- A "Submit Query" button for standard responses
+- A "Stream Response" button for real-time streaming responses
+- A checkbox to toggle AI-generated responses (enabled by default)
+- Display sections for both AI-generated responses and retrieved documents
+- Support for streaming results via Server-Sent Events
+
+The UI is designed to place AI-generated responses at the top for better user experience, followed by the retrieved source documents below. The interface has been streamlined to focus on core functionality, removing unnecessary tabs and documentation panels.
 
 ## Embedding Persistence
 
@@ -252,8 +291,7 @@ These scripts provide ways to test different aspects of the system.
 ### Core Files
 
 - **api_secrets.py**: Manages API keys and endpoints securely
-- **app.py**: Main web server with API endpoints
-- **app.py**: Main web server with embedding caching
+- **app.py**: Main web server with API endpoints and embedding caching
 - **cache_embeddings.py**: Utilities for saving and loading embeddings
 - **data_loader.py**: Functions for loading comprehensive data into the RAG system
 - **doc_processor.py**: Handles document preparation and chunking
@@ -263,8 +301,10 @@ These scripts provide ways to test different aspects of the system.
 - **manage_cache.py**: Script to manage the embedding cache
 - **mcp_connector.py**: Client for connecting an MCP server to the RAG API
 - **mcp_integration_example.py**: Example of MCP server integration
-- **mcp_support.py**: Enhanced RAG engine for MCP support
+- **mcp_support.py**: Enhanced RAG engine for MCP support and AI response generation
 - **rag_engine.py**: Core RAG functionality
+- **streaming.py**: Server-Sent Events (SSE) for real-time streaming responses
+- **sse_utils.py**: Utilities for server-sent events
 - **vector_store.py**: Embedding storage and retrieval
 - **web_scraper.py**: Scraper for the Canada.ca forms website
 
@@ -276,7 +316,8 @@ These scripts provide ways to test different aspects of the system.
 
 ### Web Interface Files
 
-- **static/index.html**: Web interface for testing the API
+- **static/index.html**: Streamlined web interface for testing the API
+- **static/simple_index.html**: Backup version of the web interface
 
 ### Deployment Files
 
@@ -331,21 +372,40 @@ The system follows this typical data flow:
    - Process and embed documents
    - Save embeddings to cache
 
-2. **Query Processing**:
-   - Receive query via API endpoint
+2. **Standard Query Processing**:
+   - Receive query via `/query` or `/api/search` endpoint
    - Create embedding for the query
    - Compare query embedding to document embeddings using cosine similarity
    - Return most relevant document chunks
-   - If using MCP, format the context for LLM consumption
 
-3. **MCP Integration**:
-   - Extract user question from MCP messages
-   - Query the RAG system for relevant context
-   - Insert context as a system message
-   - Forward enriched request to LLM
+3. **MCP Query Processing**:
+   - Receive query via `/api/mcp` endpoint
+   - Create embedding for the query
+   - Find most relevant document chunks via cosine similarity
+   - Format a prompt with the retrieved context
+   - Send prompt to OpenAI's GPT model
+   - Return both AI-generated response and relevant document chunks
+
+4. **Streaming Response Processing**:
+   - Receive query via `/api/mcp/stream` endpoint
+   - Set up Server-Sent Events (SSE) connection
+   - Stream document chunks as they are retrieved
+   - Stream AI-generated response in chunks as it's being generated
+   - Send event types to indicate progress (start, thinking, document, generating, content, end)
+
+5. **Web Interface Flow**:
+   - User submits query via form
+   - If "Generate AI Response" is checked (default), call `/api/mcp` endpoint
+   - Display AI response at the top of the page
+   - Call `/query` endpoint to retrieve and display relevant documents
+   - Or use "Stream Response" button for real-time updates via SSE
 
 ## Conclusion
 
 The GC Forms RAG system provides a powerful way to access and query information about the GC Forms platform and its API. Its modular architecture makes it easy to extend and integrate with other systems, while its embedding persistence capabilities ensure efficient operation.
 
-The system is designed to be deployed in various environments (local, Replit, Docker) and offers multiple integration options, including a direct API and MCP server enrichment. The comprehensive documentation and examples make it easy for developers to understand and use the system effectively.
+The system leverages OpenAI's GPT models to generate helpful AI responses based on retrieved documents, providing users with natural language answers to their questions. The streamlined web interface puts AI-generated responses front and center while still giving access to the source documents for reference.
+
+Real-time streaming capabilities via Server-Sent Events create a more dynamic and engaging experience, allowing users to see both search results and AI responses as they're being generated.
+
+The system is designed to be deployed in various environments (local, Replit, Docker) and offers multiple integration options, including direct API endpoints and MCP server enrichment. The comprehensive documentation and examples make it easy for developers to understand and use the system effectively.
