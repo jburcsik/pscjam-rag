@@ -163,10 +163,21 @@
                         const generatedOutput = document.getElementById('generatedOutput');
                         
                         if (mcpData && mcpData.response) {
-                            generatedOutput.innerHTML = `<p>${mcpData.response}</p>`;
+                            // Format the response text - replace line breaks with HTML breaks
+                            const formattedResponse = mcpData.response.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>');
+                            generatedOutput.innerHTML = `<p>${formattedResponse}</p>`;
+                            
+                            // Add source information if available
                             if (mcpData.sources) {
                                 generatedOutput.innerHTML += `<p><small><strong>Sources:</strong> ${mcpData.sources}</small></p>`;
                             }
+                            
+                            // Add result count if available
+                            if (mcpData.result_count !== undefined) {
+                                generatedOutput.innerHTML += `<p><small><strong>Based on ${mcpData.result_count} retrieved documents</strong></small></p>`;
+                            }
+                        } else if (mcpData && mcpData.error) {
+                            generatedOutput.innerHTML = `<p>Error: ${mcpData.error}</p>`;
                         } else {
                             generatedOutput.innerHTML = '<p>Could not generate a response.</p>';
                         }

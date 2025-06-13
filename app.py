@@ -10,8 +10,10 @@ from flask_cors import CORS
 app = Flask(__name__)
 # Enable CORS for all routes
 CORS(app)
+# Initialize RAG engine first
 rag_engine = RAGEngine()
-mcp_engine = MCPSupportEngine()
+# Create MCP engine with shared vector store
+mcp_engine = MCPSupportEngine(shared_rag_engine=rag_engine)
 
 # Initialize with comprehensive data and use embedding cache
 def initialize_data():

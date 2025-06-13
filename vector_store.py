@@ -80,41 +80,64 @@ class VectorStore:
             return True
         return False
     
-    def search(self, query, top_k=3):
+    def search(self, query, top_k=3, similarity_threshold=0.2):
         """
         Search for most similar documents to the query.
         This is a very simple implementation using cosine similarity.
         
         Args:
-            query (str): Query text
+            query (str or list): Query text or query embedding
             top_k (int): Number of results to return
+            similarity_threshold (float): Minimum similarity score (0-1) to include in results
             
         Returns:
             list: List of documents sorted by similarity
         """
         # If no embeddings, return empty list
         if not self.embeddings:
+            print("No embeddings available in vector store")
             return []
             
-        # Get embedding for query
-        query_embedding = self.create_embedding(query)
+        # Get embedding for query if it's a string
+        query_embedding = None
+        if isinstance(query, str):
+            print(f"Getting embedding for query text: {query[:30]}...")
+            query_embedding = self.create_embedding(query)
+        else:
+            # Assume query is already an embedding vector
+            query_embedding = query
+            
         if not query_embedding:
+            print("Failed to create query embedding")
             return []
+            
+        print(f"Calculating similarity against {len(self.embeddings)} documents")
             
         # Calculate cosine similarity with each document
         results = []
         for doc in self.embeddings:
             # Calculate cosine similarity
             similarity = self._cosine_similarity(query_embedding, doc["embedding"])
-                
-            results.append({
-                "text": doc["text"],
-                "metadata": doc["metadata"],
-                "similarity": similarity
-            })
+            
+            # Only include results above the threshold
+            if similarity >= similarity_threshold:
+                results.append({
+                    "text": doc["text"],
+                    "metadata": doc["metadata"],
+                    "similarity": similarity
+                })
             
         # Sort by similarity (highest to lowest)
         results.sort(key=lambda x: x["similarity"], reverse=True)
+        
+        # Print top similarities for debugging
+        if results:
+            print(f"Top similarity score: {results[0]['similarity']:.4f}")
+            if len(results) > 1:
+                print(f"Second similarity score: {results[1]['similarity']:.4f}")
+            print(f"Found {len(results)} results above threshold {similarity_threshold}")
+        else:
+            print(f"No results above similarity threshold {similarity_threshold}")
         
         # Return top_k results
         return results[:top_k]
